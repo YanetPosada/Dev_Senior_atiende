@@ -1,0 +1,76 @@
+package com.devsenior.atiende.pedido;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PedidoService {
+
+    private static final DateTimeFormatter FORMATO_FECHA =
+            DateTimeFormatter.ofPattern("d 'de' MMMM", Locale.forLanguageTag("es-CO"));
+
+    private final Map<Long, Pedido> pedidos;
+
+    public PedidoService() {
+        LocalDate hoy = LocalDate.now();
+        this.pedidos = Map.of(
+                1045L, new Pedido(1045L, "Café de Huila 500 g", 58000, EstadoPedido.ENVIADO,
+                        "TransAndina", "TA-778201", hoy.minusDays(3)),
+                1046L, new Pedido(1046L, "Café de Nariño 250 g", 36000, EstadoPedido.EN_PREPARACION,
+                        null, null, hoy.plusDays(4)),
+                1047L, new Pedido(1047L, "Café de Tolima 250 g x 2", 64000, EstadoPedido.PENDIENTE_PAGO,
+                        null, null, hoy.plusDays(5)),
+                1050L, new Pedido(1050L, "Café de Tolima 500 g", 61000, EstadoPedido.ENTREGADO,
+                        "TransAndina", "TA-779940", hoy.minusDays(6)));
+    }
+
+    public Optional<Pedido> buscar(Long numero) {
+        return Optional.ofNullable(pedidos.get(numero));
+    }
+
+    public long diasDeRetraso(Long numero) {
+        if (numero == null) {
+            return 0;
+        }
+        return buscar(numero)
+                .filter(pedido -> pedido.estado() == EstadoPedido.ENVIADO)
+                .map(pedido -> Math.max(0, ChronoUnit.DAYS.between(pedido.entregaEstimada(), LocalDate.now())))
+                .orElse(0L);
+    }
+
+    public String datosVerificados(Long numero) {
+        if (numero == null) {
+            return "- El cliente no ha dado un número de pedido.";
+        }
+        return buscar(numero)
+                .map(this::describir)
+                .orElse("- No existe un pedido con el número " + numero + ".");
+    }
+
+    private String describir(Pedido pedido) {
+        String producto = "- El pedido " + pedido.numero() + " (" + pedido.producto() + ")";
+        String fecha = pedido.entregaEstimada().format(FORMATO_FECHA);
+        return switch (pedido.estado()) {
+            case PENDIENTE_PAGO -> producto + " está esperando la confirmación del pago.";
+            case EN_PREPARACION -> producto + " está en preparación y todavía no ha salido.\n"
+                    + "- La entrega está estimada para el " + fecha + ".";
+            case ENVIADO -> producto + " fue enviado con " + pedido.transportadora()
+                    + ", guía " + pedido.numeroGuia() + ".\n" + describirEntrega(pedido, fecha);
+            case ENTREGADO -> producto + " ya fue entregado.";
+        };
+    }
+
+    private String describirEntrega(Pedido pedido, String fecha) {
+        long diasDeRetraso = diasDeRetraso(pedido.numero());
+        if (diasDeRetraso > 0) {
+            return "- La entrega estaba estimada para el " + fecha + ": lleva "
+                    + diasDeRetraso + " días de retraso.";
+        }
+        return "- La entrega está estimada para el " + fecha + ".";
+    }
+}
